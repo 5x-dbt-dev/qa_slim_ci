@@ -10,15 +10,15 @@ jobs:
   fivex_integration_run:
     runs-on: ubuntu-latest
     steps:
-    - name: Check for DBT_TOKEN Secret
-      run: |
-        if [ -z "${{ secrets.DBT_TOKEN }}" ]; then
-          echo "::error::DBT_TOKEN secret is not set. Please create Authorization token at 5x DBT UI -> Project Settings -> Access tokens -> Create token and add it in GitHub secrets"
-          exit 1
-        fi
-    - name: Trigger CI Jobs and Check Status
-      if: github.event_name == 'pull_request' && (github.event.action == 'opened' || github.event.action == 'synchronize' || github.event.action == 'reopened')
-      run: |
+      - name: Check for DBT_TOKEN Secret
+        run: |
+          if [ -z "${{ secrets.DBT_TOKEN }}" ]; then
+            echo "::error::DBT_TOKEN secret is not set. Please create Authorization token at 5x DBT UI -> Project Settings -> Access tokens -> Create token and add it in GitHub secrets"
+            exit 1
+          fi
+      - name: Trigger CI Jobs and Check Status
+        if: github.event_name == 'pull_request' && (github.event.action == 'opened' || github.event.action == 'synchronize' || github.event.action == 'reopened')
+        run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
           BRANCH_NAME=${{ github.head_ref }}
           JSON_PAYLOAD=$(echo "{\"prId\":\"$PR_NUMBER\",\"branchName\":\"$BRANCH_NAME\"}")
@@ -53,13 +53,13 @@ jobs:
             echo "Failed to trigger jobs, HTTP status: $RESPONSE, Response: $response_content"
             exit 1
           fi
-    - name: Handle PR Merge
-      if: github.event_name == 'pull_request_target' && github.event.action == 'closed' && github.event.pull_request.merged == true
-      run: |
-        PR_NUMBER=${{ github.event.pull_request.number }}
-        curl --location --request DELETE "https://qadbt.5x.co/projects/v1/091f8bcd-1231-4b7f-aefc-dc0b1731bd17/jobs/ci/$PR_NUMBER" --header "Authorization: ApiKey ${{ secrets.DBT_TOKEN }}"
-    - name: Handle PR Closure Without Merge
-      if: github.event_name == 'pull_request_target' && github.event.action == 'closed' && github.event.pull_request.merged == false
-      run: |
-        PR_NUMBER=${{ github.event.pull_request.number }}
-        echo "PR #$PR_NUMBER closed without merge"
+      - name: Handle PR Merge
+        if: github.event_name == 'pull_request_target' && github.event.action == 'closed' && github.event.pull_request.merged == true
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          curl --location --request DELETE "${{ secrets.DBT_CORE_BACKEND_API_BASE_URL }}/projects/v1/$PROJECT_ID/jobs/ci/$PR_NUMBER" --header "Authorization: ApiKey ${{ secrets.DBT_TOKEN }}"
+      - name: Handle PR Closure Without Merge
+        if: github.event_name == 'pull_request_target' && github.event.action == 'closed' && github.event.pull_request.merged == false
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          echo "PR #$PR_NUMBER closed without merge"
