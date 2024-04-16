@@ -19,41 +19,40 @@ jobs:
     - name: Trigger CI Jobs and Check Status
       if: github.event_name == 'pull_request' && (github.event.action == 'opened' || github.event.action == 'synchronize' || github.event.action == 'reopened')
       run: |
-        PR_NUMBER=${{ github.event.pull_request.number }}
-        BRANCH_NAME=${{ github.head_ref }}
-        JSON_PAYLOAD=$(echo "{\"prId\":\"$PR_NUMBER\",\"branchName\":\"$BRANCH_NAME\"}")
-        curl -s -o response.json -w "%{http_code}" -X POST -H "Content-Type: application/json" -H "Authorization: ApiKey ${{ secrets.DBT_TOKEN }}" -d "$JSON_PAYLOAD" "https://qadbt.5x.co/projects/v1/091f8bcd-1231-4b7f-aefc-dc0b1731bd17/jobs/ci/run"
-        RESPONSE_CODE=$(cat response.json)
-        if [ "$RESPONSE_CODE" -eq 200 ]; then
-          run_ids_json=$(cat response.json)
-          echo "Triggered Jobs, Run IDs: $run_ids_json"
-          echo "Proceeding with polling the run status"
-          POLL_INTERVAL=60 # Poll every 60 seconds
-          MAX_ATTEMPTS=30  # Maximum attempts
-          attempt=0
-          all_jobs_status="waiting"
-          while [ $attempt -lt $MAX_ATTEMPTS ] && [ "$all_jobs_status" == "waiting" ]; do
-            echo "Checking status of all jobs (attempt $((attempt+1))/$MAX_ATTEMPTS)..."
-            all_jobs_status=$(curl -s -H "Authorization: ApiKey ${{ secrets.DBT_TOKEN }}" -X POST -H "Content-Type: application/json" -d "$run_ids_json" "https://qadbt.5x.co/projects/v1/091f8bcd-1231-4b7f-aefc-dc0b1731bd17/jobs/job-status")
-            if [ "$all_jobs_status" == 'failed' ]; then
-              echo "::error::At least one job failed"
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          BRANCH_NAME=${{ github.head_ref }}
+          JSON_PAYLOAD=$(echo "{\"prId\":\"$PR_NUMBER\",\"branchName\":\"$BRANCH_NAME\"}")
+          RESPONSE=$(curl -s -o response.json -w "%{http_code}" -X POST -H "Content-Type: application/json" -H "Authorization: ApiKey ${{ secrets.DBT_TOKEN }}" -d "$JSON_PAYLOAD" "${{ secrets.DBT_CORE_BACKEND_API_BASE_URL }}/projects/v1/$PROJECT_ID/jobs/ci/run")
+          if [ "$RESPONSE" -eq 200 ]; then
+            run_ids_json=$(cat response.json)
+            echo "Triggered Jobs, Run IDs: $run_ids_json"
+            echo "Proceeding with polling the run status"
+            POLL_INTERVAL=60 # Poll every 60 seconds
+            MAX_ATTEMPTS=30  # Maximum attempts
+            attempt=0
+            all_jobs_status="waiting"
+            while [ $attempt -lt $MAX_ATTEMPTS ] && [ "$all_jobs_status" == "waiting" ]; do
+              echo "Checking status of all jobs (attempt $((attempt+1))/$MAX_ATTEMPTS)..."
+              all_jobs_status=$(curl -s -H "Authorization: ApiKey ${{ secrets.DBT_TOKEN }}" -X POST -H "Content-Type: application/json" -d "$run_ids_json" "${{ secrets.DBT_CORE_BACKEND_API_BASE_URL }}/projects/v1/$PROJECT_ID/jobs/job-status")
+              if [ "$all_jobs_status" == 'failed' ]; then
+                echo "::error::At least one job failed"
+                exit 1
+              elif [ "$all_jobs_status" == 'success' ]; then
+                echo "All jobs completed successfully"
+                break
+              fi
+              sleep $POLL_INTERVAL
+              attempt=$((attempt+1))
+            done
+            if [ "$all_jobs_status" != 'success' ]; then
+              echo "::error::Jobs did not complete successfully within the maximum time limit"
               exit 1
-            elif [ "$all_jobs_status" == 'success' ]; then
-              echo "All jobs completed successfully"
-              break
             fi
-            sleep $POLL_INTERVAL
-            attempt=$((attempt+1))
-          done
-          if [ "$all_jobs_status" != 'success' ]; then
-            echo "::error::Jobs did not complete successfully within the maximum time limit"
+          else
+            response_content=$(cat response.json)
+            echo "Failed to trigger jobs, HTTP status: $RESPONSE, Response: $response_content"
             exit 1
           fi
-        else
-          response_content=$(cat response.json)
-          echo "Failed to trigger jobs, HTTP status: $RESPONSE_CODE, Response: $response_content"
-          exit 1
-        fi
     - name: Handle PR Merge
       if: github.event_name == 'pull_request_target' && github.event.action == 'closed' && github.event.pull_request.merged == true
       run: |
